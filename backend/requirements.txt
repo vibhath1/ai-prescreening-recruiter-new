@@ -1,0 +1,18 @@
+fastapi==0.92.0
+uvicorn==0.20.0
+python-dotenv==0.21.0
+sqlalchemy==2.0.0
+pdfplumber==0.7.6
+psycopg2-binary
+python-multipart==0.0.5
+pydantic==1.10.7
+aiofiles==23.1.0
+pydub==0.25.1
+huggingface_hub>=0.20.0
+# --- NEW DEPENDENCIES FOR REAL-TIME ASR/TTS/VAD ---
+openai-whisper
+gTTS
+webrtcvad
+numpy # webrtcvad and openai-whisper might implicitly use this, but good to ensure
+passlib[bcrypt]==1.7.4   # password hashing
+python-jose[cryptography]==3.3.0  # JWT signing / verification
