@@ -10,16 +10,13 @@ from sqlalchemy.dialects.postgresql import JSONB # For native PostgreSQL JSONB t
 Base = declarative_base()
 
 class User(Base):
-    """
-    Represents a user (e.g., a recruiter or candidate).
-    You might expand this with roles, authentication details, etc.
-    """
     __tablename__ = "users"
-
+    
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
-    hashed_password = Column(String, nullable=False) # Store hashed passwords!
+    hashed_password = Column(String, nullable=False)
+    role = Column(String, nullable=False, default="candidate")  # Add this line
 
     # Relationships
     resumes = relationship("Resume", back_populates="owner")
