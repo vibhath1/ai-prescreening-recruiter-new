@@ -1,70 +1,60 @@
-import os
-from pydub import AudioSegment
-from dotenv import load_dotenv
+import subprocess
 import tempfile
-from gtts import gTTS
-import io
+import os
 import whisper
 import logging
+from gtts import gTTS
+import io
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Load environment variables
 load_dotenv()
 
-# Load Whisper Model
-try:
-    logger.info("Loading OpenAI Whisper 'base.en' model...")
-    whisper_model = whisper.load_model("base.en")
-    logger.info("Whisper model loaded successfully.")
-except Exception as e:
-    logger.error(f"Error loading Whisper model: {e}")
-    whisper_model = None
+# Load Whisper model globally
+whisper_model = whisper.load_model("tiny")
+
+def text_to_audio_bytes(text: str, save_path: str = None) -> bytes:
+    """
+    Converts a text string to spoken audio (MP3) and returns the byte content.
+    """
+    try:
+        tts = gTTS(text)
+        buf = io.BytesIO()
+        tts.write_to_fp(buf)
+        buf.seek(0)
+        return buf.read()
+    except Exception as e:
+        logger.error(f"Text-to-Speech failed: {e}")
+        raise RuntimeError("Text-to-Speech generation failed")
 
 def transcribe_audio_bytes(audio_bytes: bytes) -> str:
+    """
+    Takes raw audio bytes (e.g. PCM/WAV) and transcribes using Whisper.
+    """
     if whisper_model is None:
         return "Speech-to-Text service unavailable."
 
-    temp_audio_file = None
+    temp_audio_path = None
     try:
-        temp_audio_file = tempfile.NamedTemporaryFile(delete=False, suffix=".webm").name
-        with open(temp_audio_file, 'wb') as f:
-            f.write(audio_bytes)
+        # Save audio to a temporary .wav file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_audio:
+            temp_audio.write(audio_bytes)
+            temp_audio.flush()
+            temp_audio_path = temp_audio.name
 
-        logger.info(f"Transcribing {len(audio_bytes)} bytes using Whisper...")
-        result = whisper_model.transcribe(temp_audio_file)
-        transcribed_text = result["text"]
+        logger.info(f"Transcribing {len(audio_bytes)} bytes using Whisper from {temp_audio_path}...")
+        result = whisper_model.transcribe(temp_audio_path)
         logger.info("Transcription complete.")
-        return transcribed_text
+        return result["text"]
+
     except Exception as e:
         logger.error(f"Error in speech-to-text conversion with Whisper: {str(e)}")
         return f"Error: Could not transcribe audio. {str(e)}"
+
     finally:
-        if temp_audio_file and os.path.exists(temp_audio_file):
+        if temp_audio_path and os.path.exists(temp_audio_path):
             try:
-                os.unlink(temp_audio_file)
-                logger.info(f"Cleaned up temporary audio file: {temp_audio_file}")
+                os.unlink(temp_audio_path)
+                logger.info(f"Cleaned up temporary audio file: {temp_audio_path}")
             except Exception as e:
-                logger.error(f"Failed to clean up temporary audio file {temp_audio_file}: {str(e)}")
-
-def text_to_audio_bytes(text: str, save_path=None) -> bytes:
-    try:
-        audio_buffer = io.BytesIO()
-        tts = gTTS(text=text, lang='en')
-        tts.write_to_fp(audio_buffer)
-        audio_buffer.seek(0)
-        audio_bytes = audio_buffer.getvalue()
-
-        if save_path:
-            os.makedirs(os.path.dirname(os.path.abspath(save_path)), exist_ok=True)
-            with open(save_path, 'wb') as f:
-                f.write(audio_bytes)
-            logger.info(f"Audio saved to: {save_path}")
-
-        logger.info(f"Generated {len(audio_bytes)} bytes of audio for text: {text[:50]}...")
-        return audio_bytes
-    except Exception as e:
-        logger.error(f"Error in text-to-speech conversion with gTTS: {str(e)}")
-        return b""
+                logger.warning(f"Failed to remove temp file: {e}")
