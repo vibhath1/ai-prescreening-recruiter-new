@@ -22,9 +22,12 @@ origins = [
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],
+   # allow_origins=["https://web-sandbox.oaiusercontent.com"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    #expose_headers=["X-Audio-Filename", "X-Session-ID", "Content-Disposition"],
+     expose_headers=["*"],
 )
 
 # ──────────────────────────────────────────────────────────────────────
