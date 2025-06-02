@@ -40,6 +40,7 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)):
         username=user_in.username,
         email=user_in.email,
         hashed_password=hash_password(user_in.password),
+        role=user_in.role
     )
     db.add(db_user)
     db.commit()
@@ -60,7 +61,15 @@ def login(
         raise HTTPException(status_code=401, detail="Incorrect username or password")
 
     token = create_access_token({"sub": str(user.id)})
-    return {"access_token": token, "token_type": "bearer"}
+    return {
+        "access_token": token, 
+        "token_type": "bearer",
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "role": user.role  # Return the actual role from database
+        }
+    }
 
 # -------------------------------------------------------------------------
 # Current-user dependency
