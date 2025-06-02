@@ -1,21 +1,26 @@
 """
-ai.py – Minimal prompt builder with Mistral model
+ai.py Dynamic prompt builder with Mistral model for interactive interviews
 """
-
 import os
 import requests
 import logging
+import random
 from typing import List, Dict, Any, TypedDict
 from dotenv import load_dotenv
 
 load_dotenv()
 
-
+os.environ["HUGGINGFACE_API_TOKEN"] = "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"
 HF_TOKEN = os.getenv("HUGGINGFACE_API_TOKEN")
 
 if not HF_TOKEN:
     import warnings
     warnings.warn("HUGGINGFACE_API_TOKEN missing; AI endpoints will not work.", RuntimeWarning)
+
+headers = {
+    "Authorization": f"Bearer {HF_TOKEN}",
+    "Content-Type": "application/json"
+}
 
 DEFAULT_LLM_MODEL = "mistralai/Mistral-7B-Instruct-v0.3"
 API_URL = f"https://api-inference.huggingface.co/models/{DEFAULT_LLM_MODEL}"
@@ -33,14 +38,13 @@ def get_ai_interview_response(
         system_prompt = build_system_prompt(parsed_resume_data)
         prompt_text = build_prompt(system_prompt, conversation_history, current_user_response)
 
-        headers = {"Authorization": f"Bearer {HF_TOKEN}"}
         payload = {
             "inputs": prompt_text,
             "parameters": {
                 "max_new_tokens": 200,
-                "temperature": 0.7,
+                "temperature": 0.9,
                 "top_p": 0.9,
-                "repetition_penalty": 1.1,
+                "repetition_penalty": 1.05,
                 "return_full_text": False
             }
         }
@@ -66,17 +70,9 @@ def get_ai_interview_response(
         logging.exception(f"HF generation failed: {str(e)}")
         acknowledgment = "Thank you for sharing that information. " if conversation_history and current_user_response else ""
         question_index = len([t for t in conversation_history if t["role"] == "assistant"])
-        questions = [
-            "Could you tell me about your professional background and experience?",
-            "What interests you about this position?",
-            "Could you describe a challenging project you've worked on?",
-            "What are your key strengths that make you suitable for this role?",
-            "How do you handle pressure or tight deadlines?",
-            "Where do you see yourself professionally in the next few years?",
-            "What questions do you have about the role or our company?"
-        ]
-        if question_index < len(questions):
-            return acknowledgment + questions[question_index]
+        fallback_questions = generate_fallback_questions(parsed_resume_data)
+        if question_index < len(fallback_questions):
+            return acknowledgment + fallback_questions[question_index]
         else:
             return ("Thank you for your time today. We've covered several important aspects "
                     "of your background and experience. We'll review your responses and get "
@@ -98,10 +94,10 @@ def build_system_prompt(resume_dict: Dict[str, Any]) -> str:
 
     recruiter_rules = (
         "You are an AI recruiter conducting a preliminary interview.\n"
-        "• Ask clear, concise, relevant questions.\n"
-        "• Briefly acknowledge the candidate's previous answer before asking the next question.\n"
-        "• Conclude politely when sufficient information has been gathered.\n"
-        "Reply with either one question or a concluding statement—nothing else."
+        "• Ask one clear and relevant question at a time based on the resume and prior answers.\n"
+        "• Briefly acknowledge the user's previous answer.\n"
+        "• Never generate more than one question per prompt.\n"
+        "• Conclude politely once enough information is collected."
     )
 
     return f"<<SYS>>\n{recruiter_rules}\n\n{resume_block}\n<</SYS>>"
@@ -113,34 +109,26 @@ def build_prompt(
 ) -> str:
     segments = []
 
-    if history:
-        first_user = history[0]["content"] if history[0]["role"] == "user" else ""
-        segments.append(
-            f"<s>[INST] {system_prompt}\n{first_user} [/INST]"
-        )
-        if history[0]["role"] == "assistant":
-            segments.append(history[0]["content"] + " </s>")
+    if not history:
+        greeting = random.choice([
+            "Hello! Welcome to your mock interview.",
+            "Hi there! Let's begin your AI-powered interview.",
+            "Welcome! I’ll be guiding you through this interview.",
+        ])
+        segments.append(f"<s>[INST] {system_prompt}\n{greeting} [/INST]")
     else:
-        first_user_content = latest_user or "Please start the interview."
-        segments.append(
-            f"<s>[INST] {system_prompt}\n{first_user_content} [/INST]"
-        )
-        latest_user = ""
+        segments.append(f"<s>[INST] {system_prompt}")
+        for turn in history:
+            if turn["role"] == "user":
+                segments.append(f"[INST] {turn['content']} [/INST]")
+            elif turn["role"] == "assistant":
+                segments.append(f"{turn['content']} </s>")
 
-    for turn in history[1:]:
-        if turn["role"] == "assistant":
-            segments.append(f"{turn['content']} </s>")
-        else:
-            segments.append(f"[INST] {turn['content']} [/INST]")
-
-    if latest_user:
-        segments.append(f"[INST] {latest_user} [/INST]")
+        if latest_user:
+            segments.append(f"[INST] {latest_user} [/INST]")
 
     full_prompt = "".join(segments)
-    full_prompt = truncate_if_needed(full_prompt, max_tokens=7500)
-
-    logging.debug("Prompt sent to model:\n%s", full_prompt[:2000])
-    return full_prompt
+    return truncate_if_needed(full_prompt, max_tokens=7500)
 
 def truncate_if_needed(prompt: str, max_tokens: int) -> str:
     rough_char_limit = max_tokens * 4
@@ -151,7 +139,6 @@ def truncate_if_needed(prompt: str, max_tokens: int) -> str:
 
 def postprocess(raw: str) -> str:
     text = raw.strip()
-
     if "[INST]" in text:
         text = text.split("[INST]")[-1]
     if "</s>" in text:
@@ -162,3 +149,16 @@ def postprocess(raw: str) -> str:
             text = text[len(prefix):].strip()
 
     return text.strip()
+
+def generate_fallback_questions(resume_data: Dict[str, Any]) -> List[str]:
+    base_questions = [
+        "Can you walk me through your resume?",
+        "What role are you most interested in and why?",
+        "Tell me about a technical challenge you solved.",
+        "Which of your skills do you use most often?",
+        "What do you expect from your next job or team?",
+        "Why are you looking for new opportunities?",
+        "How do you approach problem-solving at work?"
+    ]
+    random.shuffle(base_questions)
+    return base_questions
